@@ -40,7 +40,7 @@ func run() error {
 	}
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	store := finance.NewStore()
+	store := finance.NewStore("data/transactions.json")
 	state := &appState{store: store}
 	mux := http.NewServeMux()
 

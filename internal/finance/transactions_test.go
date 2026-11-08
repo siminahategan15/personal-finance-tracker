@@ -1,12 +1,37 @@
 package finance
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestNewStore(t *testing.T) {
 	store := NewStore()
 	if store == nil {
 		t.Fatal("expected store to be initialized")
 	}
+}
+
+func TestPersistsTransactionsToFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "transactions.json")
+	store := NewStore(path)
+
+	if err := store.AddTransaction(Transaction{ID: "t1", Type: "income", Amount: 100, Category: "salary", Description: "Pay", Date: "2026-11-07"}); err != nil {
+		t.Fatalf("AddTransaction: %v", err)
+	}
+
+	loaded := NewStore(path)
+	list := loaded.ListTransactions()
+	if len(list) != 1 {
+		t.Fatalf("expected 1 transaction after reload, got %d", len(list))
+	}
+	if list[0].Category != "salary" {
+		t.Fatalf("expected salary category, got %q", list[0].Category)
+	}
+
+	_ = os.Remove(path)
 }
 
 func TestAddTransaction(t *testing.T) {

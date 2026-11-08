@@ -1,8 +1,11 @@
 package finance
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -35,16 +38,68 @@ type Summary struct {
 type Store struct {
 	mu           sync.Mutex
 	transactions []Transaction
+	filePath     string
 }
 
-func NewStore() *Store {
-	return &Store{}
+func NewStore(paths ...string) *Store {
+	filePath := ""
+	if len(paths) > 0 && paths[0] != "" {
+		filePath = paths[0]
+	}
+	store := &Store{filePath: filePath}
+	if filePath == "" {
+		return store
+	}
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		panic(err)
+	}
+	if err := store.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		panic(err)
+	}
+	return store
+}
+
+func (s *Store) Load() error {
+	if s.filePath == "" {
+		return nil
+	}
+	data, err := os.ReadFile(s.filePath)
+	if err != nil {
+		return err
+	}
+	if len(data) == 0 {
+		s.transactions = nil
+		return nil
+	}
+	var txs []Transaction
+	if err := json.Unmarshal(data, &txs); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.transactions = txs
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *Store) Save() error {
+	if s.filePath == "" {
+		return nil
+	}
+	data, err := json.MarshalIndent(s.transactions, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(s.filePath), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(s.filePath, data, 0o644)
 }
 
 func (s *Store) Reset() {
 	s.mu.Lock()
 	s.transactions = nil
 	s.mu.Unlock()
+	_ = s.Save()
 }
 
 func (s *Store) ListTransactions() []Transaction {
@@ -72,6 +127,7 @@ func (s *Store) DeleteTransaction(id string) bool {
 	for i, tx := range s.transactions {
 		if tx.ID == id {
 			s.transactions = append(s.transactions[:i], s.transactions[i+1:]...)
+			_ = s.Save()
 			return true
 		}
 	}
@@ -107,7 +163,7 @@ func (s *Store) AddTransaction(tx Transaction) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.transactions = append(s.transactions, tx)
-	return nil
+	return s.Save()
 }
 
 func (s *Store) Summary(month string) Summary {
